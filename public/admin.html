@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Empire - Admin</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="container">
+      <h1>Empire Game - Admin</h1>
+      <h2>Manage Names</h2>
+
+      <div id="message" class="message"></div>
+
+      <div style="margin-bottom: 20px">
+        <button id="deleteAllBtn" class="delete-all-btn">
+          Delete All Names
+        </button>
+      </div>
+
+      <div class="names-list">
+        <h3>All Names</h3>
+        <div id="namesContainer"></div>
+      </div>
+    </div>
+
+    <script>
+      const messageDiv = document.getElementById("message");
+      const namesContainer = document.getElementById("namesContainer");
+      const deleteAllBtn = document.getElementById("deleteAllBtn");
+
+      // Load names on page load
+      loadNames();
+
+      // Handle delete all button
+      deleteAllBtn.addEventListener("click", deleteAllNames);
+
+      // Load all names
+      async function loadNames() {
+        try {
+          const response = await fetch("/api/names");
+          const names = await response.json();
+          displayNames(names);
+        } catch (error) {
+          console.error("Error loading names:", error);
+          showMessage("Error loading names", "error");
+        }
+      }
+
+      // Display names with edit/delete options
+      function displayNames(names) {
+        if (names.length === 0) {
+          namesContainer.innerHTML = '<p class="empty">No names yet</p>';
+          return;
+        }
+
+        namesContainer.innerHTML = names
+          .map(
+            (name) => `
+                <div class="name-item-admin">
+                    <input 
+                        type="text" 
+                        value="${escapeHtml(name.name)}" 
+                        class="name-input" 
+                        data-id="${name.id}"
+                        onchange="updateName('${name.id}', this.value)"
+                    >
+                    <button 
+                        class="delete-btn" 
+                        onclick="deleteName('${name.id}')"
+                    >
+                        Delete
+                    </button>
+                </div>
+            `
+          )
+          .join("");
+      }
+
+      // Update name
+      async function updateName(id, newName) {
+        const name = newName.trim();
+        if (!name) {
+          showMessage("Name cannot be empty", "error");
+          loadNames(); // Reload to reset
+          return;
+        }
+
+        try {
+          const response = await fetch(`/api/names/${id}`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ name }),
+          });
+
+          if (response.ok) {
+            showMessage("Name updated successfully!", "success");
+          } else {
+            const error = await response.json();
+            showMessage(error.error || "Failed to update name", "error");
+            loadNames(); // Reload to reset
+          }
+        } catch (error) {
+          showMessage("Error updating name", "error");
+          loadNames(); // Reload to reset
+        }
+      }
+
+      // Delete name (no confirmation)
+      async function deleteName(id) {
+        try {
+          const response = await fetch(`/api/names/${id}`, {
+            method: "DELETE",
+          });
+
+          if (response.ok) {
+            showMessage("Name deleted successfully!", "success");
+            loadNames();
+          } else {
+            const error = await response.json();
+            showMessage(error.error || "Failed to delete name", "error");
+          }
+        } catch (error) {
+          showMessage("Error deleting name", "error");
+        }
+      }
+
+      // Delete all names (with confirmation)
+      async function deleteAllNames() {
+        if (
+          !confirm(
+            "Are you sure you want to delete ALL names? This action cannot be undone."
+          )
+        ) {
+          return;
+        }
+
+        try {
+          const response = await fetch("/api/names", {
+            method: "DELETE",
+          });
+
+          if (response.ok) {
+            showMessage("All names deleted successfully!", "success");
+            loadNames();
+          } else {
+            const error = await response.json();
+            showMessage(error.error || "Failed to delete all names", "error");
+          }
+        } catch (error) {
+          showMessage("Error deleting all names", "error");
+        }
+      }
+
+      // Show message
+      function showMessage(text, type) {
+        messageDiv.textContent = text;
+        messageDiv.className = `message ${type}`;
+        setTimeout(() => {
+          messageDiv.textContent = "";
+          messageDiv.className = "message";
+        }, 3000);
+      }
+
+      // Escape HTML to prevent XSS
+      function escapeHtml(text) {
+        const div = document.createElement("div");
+        div.textContent = text;
+        return div.innerHTML;
+      }
+
+      // Refresh names every 5 seconds
+      setInterval(loadNames, 5000);
+    </script>
+  </body>
+</html>

@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Empire - Add Name</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="container">
+      <h1>Empire Game</h1>
+      <h2 id="pageTitle">Your Name</h2>
+
+      <div id="addFormSection">
+        <form id="nameForm">
+          <input
+            type="text"
+            id="nameInput"
+            placeholder="Enter your name"
+            required
+            autocomplete="off"
+          />
+          <button type="submit">Add Name</button>
+        </form>
+      </div>
+
+      <div id="editFormSection" style="display: none">
+        <div class="name-item-own">
+          <input
+            type="text"
+            id="editNameInput"
+            class="name-input"
+            placeholder="Your name"
+          />
+          <button type="button" id="saveBtn" class="save-btn">Save</button>
+        </div>
+      </div>
+
+      <div id="message" class="message"></div>
+    </div>
+
+    <script>
+      const nameForm = document.getElementById("nameForm");
+      const nameInput = document.getElementById("nameInput");
+      const editNameInput = document.getElementById("editNameInput");
+      const saveBtn = document.getElementById("saveBtn");
+      const messageDiv = document.getElementById("message");
+      const addFormSection = document.getElementById("addFormSection");
+      const editFormSection = document.getElementById("editFormSection");
+      const pageTitle = document.getElementById("pageTitle");
+
+      const STORAGE_KEY = "empire_user_name_id";
+
+      // Check if user already has a name on page load
+      window.addEventListener("DOMContentLoaded", () => {
+        const savedNameId = localStorage.getItem(STORAGE_KEY);
+        if (savedNameId) {
+          loadMyName(savedNameId);
+        }
+      });
+
+      // Handle form submission (add new name)
+      nameForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const name = nameInput.value.trim();
+
+        if (!name) {
+          showMessage("Please enter a name", "error");
+          return;
+        }
+
+        try {
+          const response = await fetch("/api/names", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ name }),
+          });
+
+          if (response.ok) {
+            const newName = await response.json();
+            // Save the name ID to localStorage
+            localStorage.setItem(STORAGE_KEY, newName.id);
+            nameInput.value = "";
+            showMessage("Name added successfully!", "success");
+            // Switch to edit view
+            showEditView(newName);
+          } else {
+            const error = await response.json();
+            showMessage(error.error || "Failed to add name", "error");
+          }
+        } catch (error) {
+          showMessage("Error connecting to server", "error");
+        }
+      });
+
+      // Handle save button (edit existing name)
+      saveBtn.addEventListener("click", async () => {
+        const savedNameId = localStorage.getItem(STORAGE_KEY);
+        if (!savedNameId) {
+          showMessage("No name found to edit", "error");
+          return;
+        }
+
+        const newName = editNameInput.value.trim();
+        if (!newName) {
+          showMessage("Name cannot be empty", "error");
+          loadMyName(savedNameId); // Reset to original value
+          return;
+        }
+
+        try {
+          const response = await fetch(`/api/names/${savedNameId}`, {
+            method: "PUT",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ name: newName }),
+          });
+
+          if (response.ok) {
+            showMessage("Name updated successfully!", "success");
+          } else {
+            const error = await response.json();
+            showMessage(error.error || "Failed to update name", "error");
+            loadMyName(savedNameId); // Reset to original value
+          }
+        } catch (error) {
+          showMessage("Error updating name", "error");
+          loadMyName(savedNameId); // Reset to original value
+        }
+      });
+
+      // Load user's own name
+      async function loadMyName(nameId) {
+        try {
+          const response = await fetch(`/api/names/${nameId}`);
+          if (response.ok) {
+            const nameData = await response.json();
+            showEditView(nameData);
+          } else {
+            // Name not found (maybe deleted by admin), clear storage and show add form
+            localStorage.removeItem(STORAGE_KEY);
+            showAddView();
+          }
+        } catch (error) {
+          console.error("Error loading name:", error);
+          showMessage("Error loading your name", "error");
+        }
+      }
+
+      // Show edit view (when user has a name)
+      function showEditView(nameData) {
+        addFormSection.style.display = "none";
+        editFormSection.style.display = "block";
+        editNameInput.value = nameData.name;
+        pageTitle.textContent = "Your Name";
+      }
+
+      // Show add view (when user doesn't have a name yet)
+      function showAddView() {
+        addFormSection.style.display = "block";
+        editFormSection.style.display = "none";
+        pageTitle.textContent = "Add Your Name";
+      }
+
+      // Show message
+      function showMessage(text, type) {
+        messageDiv.textContent = text;
+        messageDiv.className = `message ${type}`;
+        setTimeout(() => {
+          messageDiv.textContent = "";
+          messageDiv.className = "message";
+        }, 3000);
+      }
+    </script>
+  </body>
+</html>
