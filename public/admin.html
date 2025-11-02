@@ -16,11 +16,9 @@
       <div
         style="margin-bottom: 20px; display: flex; gap: 10px; flex-wrap: wrap"
       >
-        <button id="randomizeBtn" class="randomize-btn">
-          Randomize & Hide
-        </button>
-        <button id="revealBtn" class="reveal-btn" style="display: none">
-          Reveal Names
+        <button id="randomizeBtn" class="randomize-btn">Randomize</button>
+        <button id="showHideBtn" class="reveal-btn" style="display: none">
+          Show Names
         </button>
         <button id="deleteAllBtn" class="delete-all-btn">
           Delete All Names
@@ -30,13 +28,10 @@
       <div class="names-list">
         <h3>All Names</h3>
         <div id="namesContainer" style="display: none">
-          <p class="empty">
-            Click "Randomize & Hide" to prepare, then "Reveal Names" to see them
-          </p>
+          <p class="empty">No names yet</p>
         </div>
         <div id="hiddenMessage" class="hidden-message">
-          Names are hidden. Click "Randomize & Hide" to prepare, then "Reveal
-          Names" to see them.
+          Names are hidden. Click "Randomize" to randomize, then "Show Names" to view them.
         </div>
       </div>
     </div>
@@ -47,31 +42,77 @@
       const hiddenMessage = document.getElementById("hiddenMessage");
       const deleteAllBtn = document.getElementById("deleteAllBtn");
       const randomizeBtn = document.getElementById("randomizeBtn");
-      const revealBtn = document.getElementById("revealBtn");
+      const showHideBtn = document.getElementById("showHideBtn");
 
       let shuffledNames = [];
-      let isRevealed = false;
+      let isShuffled = false;
+      let isVisible = false;
 
       // Load names on page load
       loadNames();
 
       // Handle buttons
       deleteAllBtn.addEventListener("click", deleteAllNames);
-      randomizeBtn.addEventListener("click", randomizeAndHide);
-      revealBtn.addEventListener("click", revealNames);
+      randomizeBtn.addEventListener("click", randomizeNames);
+      showHideBtn.addEventListener("click", toggleShowHide);
 
-      // Load all names
+      // Load all names and preserve shuffled state
       async function loadNames() {
         try {
           const response = await fetch("/api/names");
-          const names = await response.json();
+          const currentNames = await response.json();
 
-          // If names changed while hidden, hide again
-          if (!isRevealed) {
-            hideNames();
-            updateHiddenMessage(names.length);
+          if (currentNames.length === 0) {
+            shuffledNames = [];
+            isShuffled = false;
+            isVisible = false;
+            namesContainer.innerHTML = '<p class="empty">No names yet</p>';
+            namesContainer.style.display = "block";
+            hiddenMessage.style.display = "none";
+            showHideBtn.style.display = "none";
+            return;
+          }
+
+          // If we have shuffled names, update them with any new names
+          if (isShuffled && shuffledNames.length > 0) {
+            // Find new names that weren't in shuffledNames
+            const existingIds = new Set(shuffledNames.map((n) => n.id));
+            const newNames = currentNames.filter((n) => !existingIds.has(n.id));
+            
+            // Remove names that were deleted
+            const currentIds = new Set(currentNames.map((n) => n.id));
+            shuffledNames = shuffledNames.filter((n) => currentIds.has(n.id));
+
+            // Add new names at random positions
+            newNames.forEach((newName) => {
+              const randomIndex = Math.floor(Math.random() * (shuffledNames.length + 1));
+              shuffledNames.splice(randomIndex, 0, newName);
+            });
+
+            // Update names that might have been edited
+            shuffledNames = shuffledNames.map((shuffled) => {
+              const current = currentNames.find((n) => n.id === shuffled.id);
+              return current || shuffled;
+            });
+
+            // Show/hide based on current state
+            if (isVisible) {
+              displayNames(shuffledNames);
+            } else {
+              updateHiddenMessage(shuffledNames.length);
+            }
           } else {
-            displayNames(names);
+            // Not shuffled yet, just show regular order or hide
+            if (!isVisible) {
+              updateHiddenMessage(currentNames.length);
+            } else {
+              displayNames(currentNames);
+            }
+          }
+
+          // Show the show/hide button if we have names
+          if (currentNames.length > 0) {
+            showHideBtn.style.display = "block";
           }
         } catch (error) {
           console.error("Error loading names:", error);
@@ -79,75 +120,122 @@
         }
       }
 
-      // Randomize and hide names
-      function randomizeAndHide() {
-        async function doRandomize() {
+      // Randomize names and keep the shuffled order
+      async function randomizeNames() {
+        try {
+          const response = await fetch("/api/names");
+          const names = await response.json();
+
+          if (names.length === 0) {
+            showMessage("No names to randomize", "error");
+            return;
+          }
+
+          // Shuffle the names array
+          shuffledNames = [...names];
+          for (let i = shuffledNames.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffledNames[i], shuffledNames[j]] = [
+              shuffledNames[j],
+              shuffledNames[i],
+            ];
+          }
+
+          isShuffled = true;
+          isVisible = false;
+
+          // Update display
+          hideNames();
+          showHideBtn.style.display = "block";
+          showHideBtn.textContent = "Show Names";
+          showMessage(
+            `Randomized ${names.length} name${names.length !== 1 ? "s" : ""}.`,
+            "success"
+          );
+        } catch (error) {
+          console.error("Error randomizing names:", error);
+          showMessage("Error randomizing names", "error");
+        }
+      }
+
+      // Toggle show/hide
+      async function toggleShowHide() {
+        if (!isShuffled) {
+          // Not shuffled yet, fetch current names and toggle
           try {
             const response = await fetch("/api/names");
             const names = await response.json();
-
+            
             if (names.length === 0) {
-              showMessage("No names to randomize", "error");
+              showMessage("No names to show", "error");
               return;
             }
-
-            // Shuffle the names array
-            shuffledNames = [...names];
-            for (let i = shuffledNames.length - 1; i > 0; i--) {
-              const j = Math.floor(Math.random() * (i + 1));
-              [shuffledNames[i], shuffledNames[j]] = [
-                shuffledNames[j],
-                shuffledNames[i],
-              ];
+            
+            if (isVisible) {
+              hideNames();
+              showHideBtn.textContent = "Show Names";
+            } else {
+              isVisible = true;
+              displayNames(names);
+              showHideBtn.textContent = "Hide Names";
             }
-
-            // Hide the names
-            hideNames();
-            revealBtn.style.display = "block";
-            showMessage(
-              `Randomized ${names.length} names. Click "Reveal Names" to see them.`,
-              "success"
-            );
           } catch (error) {
-            console.error("Error randomizing names:", error);
-            showMessage("Error randomizing names", "error");
+            showMessage("Error loading names", "error");
+          }
+        } else {
+          // Use shuffled order
+          if (isVisible) {
+            hideNames();
+            showHideBtn.textContent = "Show Names";
+          } else {
+            showNames();
+            showHideBtn.textContent = "Hide Names";
           }
         }
-        doRandomize();
       }
 
-      // Reveal the shuffled names
-      function revealNames() {
+      // Show the names
+      function showNames() {
         if (shuffledNames.length === 0) {
-          showMessage(
-            "No names to reveal. Click 'Randomize & Hide' first.",
-            "error"
-          );
+          showMessage("No names to show", "error");
           return;
         }
-
-        isRevealed = true;
+        isVisible = true;
         displayNames(shuffledNames);
-        hiddenMessage.style.display = "none";
-        namesContainer.style.display = "block";
-        revealBtn.style.display = "none";
       }
 
       // Hide the names
-      function hideNames() {
-        isRevealed = false;
+      async function hideNames() {
+        isVisible = false;
         namesContainer.style.display = "none";
         hiddenMessage.style.display = "block";
+        
+        if (isShuffled && shuffledNames.length > 0) {
+          updateHiddenMessage(shuffledNames.length);
+        } else {
+          // Get current count for non-shuffled
+          try {
+            const response = await fetch("/api/names");
+            const names = await response.json();
+            updateHiddenMessage(names.length);
+          } catch (error) {
+            updateHiddenMessage(0);
+          }
+        }
       }
 
       // Update hidden message with count
       function updateHiddenMessage(count) {
         if (count === 0) {
           hiddenMessage.textContent = "No names yet";
+        } else if (isShuffled) {
+          hiddenMessage.textContent = `${count} name${
+            count !== 1 ? "s" : ""
+          } hidden (randomized). Click "Show Names" to view them.`;
         } else {
           hiddenMessage.textContent = `${count} name${
             count !== 1 ? "s" : ""
-          } hidden. Click "Randomize & Hide" to prepare, then "Reveal Names" to see them.`;
+          } hidden. Click "Randomize" to randomize, then "Show Names" to view them.`;
         }
       }
 
@@ -205,6 +293,7 @@
 
           if (response.ok) {
             showMessage("Name updated successfully!", "success");
+            loadNames(); // Reload to update display
           } else {
             const error = await response.json();
             showMessage(error.error || "Failed to update name", "error");
@@ -225,26 +314,11 @@
 
           if (response.ok) {
             showMessage("Name deleted successfully!", "success");
-            // If revealed, update the displayed names
-            if (isRevealed) {
-              // Remove from shuffledNames if it exists there
+            // Remove from shuffledNames if shuffled
+            if (isShuffled) {
               shuffledNames = shuffledNames.filter((n) => n.id !== id);
-              // Reload names
-              const namesResponse = await fetch("/api/names");
-              const names = await namesResponse.json();
-              if (names.length === 0) {
-                hideNames();
-                shuffledNames = [];
-              } else {
-                displayNames(
-                  shuffledNames.filter((n) =>
-                    names.some((name) => name.id === n.id)
-                  )
-                );
-              }
-            } else {
-              loadNames();
             }
+            loadNames();
           } else {
             const error = await response.json();
             showMessage(error.error || "Failed to delete name", "error");
@@ -271,7 +345,8 @@
 
           if (response.ok) {
             shuffledNames = [];
-            isRevealed = false;
+            isShuffled = false;
+            isVisible = false;
             showMessage("All names deleted successfully!", "success");
             loadNames();
           } else {
@@ -299,13 +374,6 @@
         div.textContent = text;
         return div.innerHTML;
       }
-
-      // Refresh names every 5 seconds only if revealed
-      setInterval(() => {
-        if (isRevealed) {
-          loadNames();
-        }
-      }, 5000);
     </script>
   </body>
 </html>
